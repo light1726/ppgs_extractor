@@ -9,15 +9,15 @@ import numpy as np
 from models import DNNClassifier
 
 # some super parameters
-BATCH_SIZE = 128
+BATCH_SIZE = 1024
 STEPS = int(1e6)
-LEARNING_RATE = 4e-4
+LEARNING_RATE = 0.3
 STARTED_DATESTRING = "{0:%Y-%m-%dT%H-%M-%S}".format(datetime.now())
 MAX_TO_SAVE = 10
-CKPT_EVERY = 500
+CKPT_EVERY = 1000
 MFCC_DIM = 39
 PPG_DIM = 131
-DATA_DIR = ''
+DATA_DIR = '/data/share/whole_data_39'
 
 
 def get_arguments():
@@ -105,35 +105,51 @@ def main():
     dev_dir = directories['dev_dir']
 
     # load data
-    train_mfccs = np.load(os.path.join(DATA_DIR, 'train_data_noisy.npy'))
+    train_mfccs = np.load(os.path.join(DATA_DIR, 'train_data.npy'))
     train_phonemes = np.load(os.path.join(DATA_DIR, 'train_label.npy'))
     train_len = train_mfccs.shape[0]
-    with np.load(os.path.join(DATA_DIR, 'test_data_noisy.npy')) as data:
-        time_len = data.shape[0]
-        dev_mfccs = data[:time_len // 2, :]
-        test_mfccs = data[time_len // 2:, :]
-    with np.load(os.path.join(DATA_DIR, 'test_label.npy')) as data:
-        time_len = data.shape[0]
-        dev_phonemes = data[:time_len // 2, :]
-        test_phonemes = data[time_len // 2:, :]
+    dev_inputs = np.load(os.path.join(DATA_DIR, 'test_data.npy'))
+    time_len = dev_inputs.shape[0]
+    dev_mfccs = dev_inputs[:time_len // 2, :]
+    test_mfccs = dev_inputs[time_len // 2:, :]
+    del dev_inputs
+    dev_outputs = np.load(os.path.join(DATA_DIR, 'test_label.npy'))
+    time_len = dev_outputs.shape[0]
+    dev_phonemes = dev_outputs[:time_len // 2, :]
+    test_phonemes = dev_outputs[time_len // 2:, :]
+    del dev_outputs
     dev_len = dev_mfccs.shape[0]
     test_len = test_mfccs.shape[0]
 
     mfcc_pl = tf.placeholder(dtype=tf.float32, shape=[None, MFCC_DIM], name='mfcc_pl')
     phonemes_pl = tf.placeholder(dtype=tf.int32, shape=[None, PPG_DIM], name='phoneme_pl')
+    use_dropout_pl = tf.placeholder(dtype=tf.bool, shape=[], name='use_dropout_pl')
 
     # create network and optimization operation
-    classifier = DNNClassifier(out_dims=PPG_DIM, hiddens=[256, 256, 256, 256], name='dnn_classifier')
+    classifier = DNNClassifier(out_dims=PPG_DIM, hiddens=[256, 256, 256],
+                               drop_rate=0.2, name='dnn_classifier')
 
-    results_dict = classifier(mfcc_pl, phonemes_pl)
+    results_dict = classifier(mfcc_pl, use_dropout_pl, phonemes_pl)
     predicted = tf.nn.softmax(results_dict['logits'])
-    tf.summary.image('predicted', predicted)
-    tf.summary.image('groundtruth', phonemes_pl)
+    tf.summary.image('predicted',
+                     tf.expand_dims(
+                         tf.expand_dims(
+                             tf.transpose(predicted, [1, 0]),
+                             axis=-1),
+                         axis=0))
+    tf.summary.image('groundtruth',
+                     tf.expand_dims(
+                         tf.expand_dims(
+                             tf.cast(
+                                 tf.transpose(phonemes_pl, [1, 0]),
+                                 tf.float32),
+                             axis=-1),
+                         axis=0))
     loss = results_dict['cross_entropy']
     learning_rate_pl = tf.placeholder(tf.float32, None, 'learning_rate')
     tf.summary.scalar('cross_entropy', loss)
     tf.summary.scalar('learning_rate', learning_rate_pl)
-    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate_pl, epsilon=1e-4)
+    optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate_pl)
     optim = optimizer.minimize(loss)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     optim = tf.group([optim, update_ops])
@@ -168,8 +184,8 @@ def main():
         for step in range(saved_global_step + 1, args.steps):
             train_inputs = train_mfccs[step % train_len: step % train_len + args.batch_size, :]
             train_labels = train_phonemes[step % train_len: step % train_len + args.batch_size, :]
-            dev_inputs = dev_mfccs[step % dev_len: step % train_len + args.batch_size, :]
-            dev_labels = dev_phonemes[step % dev_len: step % train_len + args.batch_size, :]
+            dev_inputs = dev_mfccs[step % dev_len: step % dev_len + args.batch_size, :]
+            dev_labels = dev_phonemes[step % dev_len: step % dev_len + args.batch_size, :]
             if step <= int(4e5):
                 lr = args.lr
             elif step <= int(6e5):
@@ -183,6 +199,7 @@ def main():
                 summary, loss_value = sess.run([summaries, loss],
                                                feed_dict={mfcc_pl: dev_inputs,
                                                           phonemes_pl: dev_labels,
+                                                          use_dropout_pl: False,
                                                           learning_rate_pl: lr})
                 dev_writer.add_summary(summary, step)
                 duration = time.time() - start_time
@@ -194,11 +211,13 @@ def main():
                 summary, loss_value, _ = sess.run([summaries, loss, optim],
                                                   feed_dict={mfcc_pl: train_inputs,
                                                              phonemes_pl: train_labels,
+                                                             use_dropout_pl: True,
                                                              learning_rate_pl: lr})
                 train_writer.add_summary(summary, step)
-                duration = time.time() - start_time
-                print('step {:d} - training loss = {:.3f}, ({:.3f} sec/step)'
-                      .format(step, loss_value, duration))
+                if step % 100 == 0:
+                    duration = time.time() - start_time
+                    print('step {:d} - training loss = {:.3f}, ({:.3f} sec/step)'
+                          .format(step, loss_value, duration))
     except KeyboardInterrupt:
         # Introduce a line break after ^C is displayed so save message
         # is on its own line.
