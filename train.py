@@ -4,16 +4,16 @@ from datetime import datetime
 import time
 import os
 import sys
-import numpy as np
 
-from models import DNNClassifier
+from models import CnnDnnClassifier
+from timit_dataset import train_generator, test_generator
 
 # some super parameters
 BATCH_SIZE = 1024
-STEPS = int(1e6)
-LEARNING_RATE = 0.3
+STEPS = int(5e5)
+LEARNING_RATE = 0.1
 STARTED_DATESTRING = "{0:%Y-%m-%dT%H-%M-%S}".format(datetime.now())
-MAX_TO_SAVE = 10
+MAX_TO_SAVE = 20
 CKPT_EVERY = 1000
 MFCC_DIM = 39
 PPG_DIM = 131
@@ -104,52 +104,77 @@ def main():
     logdir = directories['logdir']
     dev_dir = directories['dev_dir']
 
-    # load data
-    train_mfccs = np.load(os.path.join(DATA_DIR, 'train_data.npy'))
-    train_phonemes = np.load(os.path.join(DATA_DIR, 'train_label.npy'))
-    train_len = train_mfccs.shape[0]
-    dev_inputs = np.load(os.path.join(DATA_DIR, 'test_data.npy'))
-    time_len = dev_inputs.shape[0]
-    dev_mfccs = dev_inputs[:time_len // 2, :]
-    test_mfccs = dev_inputs[time_len // 2:, :]
-    del dev_inputs
-    dev_outputs = np.load(os.path.join(DATA_DIR, 'test_label.npy'))
-    time_len = dev_outputs.shape[0]
-    dev_phonemes = dev_outputs[:time_len // 2, :]
-    test_phonemes = dev_outputs[time_len // 2:, :]
-    del dev_outputs
-    dev_len = dev_mfccs.shape[0]
-    test_len = test_mfccs.shape[0]
+    # dataset
+    train_set = tf.data.Dataset.from_generator(train_generator,
+                                               output_types=(
+                                                   tf.float32, tf.float32, tf.int32),
+                                               output_shapes=(
+                                                   [None, MFCC_DIM], [None, PPG_DIM], []))
+    train_set = train_set.padded_batch(args.batch_size,
+                                       padded_shapes=([None, MFCC_DIM],
+                                                      [None, PPG_DIM],
+                                                      [])).repeat()
+    train_iterator = train_set.make_initializable_iterator()
+    test_set = tf.data.Dataset.from_generator(test_generator,
+                                              output_types=(
+                                                  tf.float32, tf.float32, tf.int32),
+                                              output_shapes=(
+                                                  [None, MFCC_DIM], [None, PPG_DIM], []))
+    test_set = test_set.padded_batch(args.batch_size,
+                                     padded_shapes=([None, MFCC_DIM],
+                                                    [None, PPG_DIM],
+                                                    [])).repeat()
+    test_iterator = test_set.make_initializable_iterator()
+    dataset_handle = tf.placeholder(tf.string, shape=[])
+    dataset_iter = tf.data.Iterator.from_string_handle(
+        dataset_handle,
+        train_set.output_types,
+        train_set.output_shapes
+    )
+    batch_data = dataset_iter.get_next()
 
-    mfcc_pl = tf.placeholder(dtype=tf.float32, shape=[None, MFCC_DIM], name='mfcc_pl')
-    phonemes_pl = tf.placeholder(dtype=tf.int32, shape=[None, PPG_DIM], name='phoneme_pl')
-    use_dropout_pl = tf.placeholder(dtype=tf.bool, shape=[], name='use_dropout_pl')
+    # load data
+    # train_mfccs = np.load(os.path.join(DATA_DIR, 'train_data.npy'))
+    # train_phonemes = np.load(os.path.join(DATA_DIR, 'train_label.npy'))
+    # train_len = train_mfccs.shape[0]
+    # dev_inputs = np.load(os.path.join(DATA_DIR, 'test_data.npy'))
+    # time_len = dev_inputs.shape[0]
+    # dev_mfccs = dev_inputs[:time_len // 2, :]
+    # test_mfccs = dev_inputs[time_len // 2:, :]
+    # del dev_inputs
+    # dev_outputs = np.load(os.path.join(DATA_DIR, 'test_label.npy'))
+    # time_len = dev_outputs.shape[0]
+    # dev_phonemes = dev_outputs[:time_len // 2, :]
+    # test_phonemes = dev_outputs[time_len // 2:, :]
+    # del dev_outputs
+    # dev_len = dev_mfccs.shape[0]
+    # test_len = test_mfccs.shape[0]
+    #
+    # mfcc_pl = tf.placeholder(dtype=tf.float32, shape=[None, MFCC_DIM], name='mfcc_pl')
+    # phonemes_pl = tf.placeholder(dtype=tf.int32, shape=[None, PPG_DIM], name='phoneme_pl')
+    # use_dropout_pl = tf.placeholder(dtype=tf.bool, shape=[], name='use_dropout_pl')
 
     # create network and optimization operation
-    classifier = DNNClassifier(out_dims=PPG_DIM, hiddens=[256, 256, 256],
-                               drop_rate=0.2, name='dnn_classifier')
-
-    results_dict = classifier(mfcc_pl, use_dropout_pl, phonemes_pl)
+    # classifier = DNNClassifier(out_dims=PPG_DIM, hiddens=[256, 256, 256],
+    #                            drop_rate=0.2, name='dnn_classifier')
+    classifier = CnnDnnClassifier(out_dims=PPG_DIM, n_cnn=10, cnn_hidden=64, dense_hiddens=[256, 256])
+    results_dict = classifier(batch_data[0], batch_data[1], batch_data[2])
     predicted = tf.nn.softmax(results_dict['logits'])
     tf.summary.image('predicted',
                      tf.expand_dims(
-                         tf.expand_dims(
-                             tf.transpose(predicted, [1, 0]),
-                             axis=-1),
-                         axis=0))
+                         tf.transpose(predicted, [0, 2, 1]),
+                         axis=-1), max_outputs=1)
     tf.summary.image('groundtruth',
                      tf.expand_dims(
-                         tf.expand_dims(
-                             tf.cast(
-                                 tf.transpose(phonemes_pl, [1, 0]),
-                                 tf.float32),
-                             axis=-1),
-                         axis=0))
+                         tf.cast(
+                             tf.transpose(batch_data[1], [0, 2, 1]),
+                             tf.float32),
+                         axis=-1), max_outputs=1)
     loss = results_dict['cross_entropy']
     learning_rate_pl = tf.placeholder(tf.float32, None, 'learning_rate')
     tf.summary.scalar('cross_entropy', loss)
     tf.summary.scalar('learning_rate', learning_rate_pl)
-    optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate_pl)
+    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate_pl)
     optim = optimizer.minimize(loss)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     optim = tf.group([optim, update_ops])
@@ -166,6 +191,9 @@ def main():
     config.gpu_options.allow_growth = True
     sess = tf.Session(config=config)
     init = tf.global_variables_initializer()
+    sess.run([train_iterator.initializer, test_iterator.initializer])
+    train_handle, test_handle = sess.run([train_iterator.string_handle(),
+                                         test_iterator.string_handle()])
     sess.run(init)
     # try to load saved model
     try:
@@ -182,10 +210,10 @@ def main():
     step = None
     try:
         for step in range(saved_global_step + 1, args.steps):
-            train_inputs = train_mfccs[step % train_len: step % train_len + args.batch_size, :]
-            train_labels = train_phonemes[step % train_len: step % train_len + args.batch_size, :]
-            dev_inputs = dev_mfccs[step % dev_len: step % dev_len + args.batch_size, :]
-            dev_labels = dev_phonemes[step % dev_len: step % dev_len + args.batch_size, :]
+            # train_inputs = train_mfccs[step % train_len: step % train_len + args.batch_size, :]
+            # train_labels = train_phonemes[step % train_len: step % train_len + args.batch_size, :]
+            # dev_inputs = dev_mfccs[step % dev_len: step % dev_len + args.batch_size, :]
+            # dev_labels = dev_phonemes[step % dev_len: step % dev_len + args.batch_size, :]
             if step <= int(4e5):
                 lr = args.lr
             elif step <= int(6e5):
@@ -197,9 +225,7 @@ def main():
             start_time = time.time()
             if step % args.ckpt_every == 0:
                 summary, loss_value = sess.run([summaries, loss],
-                                               feed_dict={mfcc_pl: dev_inputs,
-                                                          phonemes_pl: dev_labels,
-                                                          use_dropout_pl: False,
+                                               feed_dict={dataset_handle: test_handle,
                                                           learning_rate_pl: lr})
                 dev_writer.add_summary(summary, step)
                 duration = time.time() - start_time
@@ -209,9 +235,7 @@ def main():
                 last_saved_step = step
             else:
                 summary, loss_value, _ = sess.run([summaries, loss, optim],
-                                                  feed_dict={mfcc_pl: train_inputs,
-                                                             phonemes_pl: train_labels,
-                                                             use_dropout_pl: True,
+                                                  feed_dict={dataset_handle: train_handle,
                                                              learning_rate_pl: lr})
                 train_writer.add_summary(summary, step)
                 if step % 100 == 0:
