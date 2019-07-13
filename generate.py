@@ -2,33 +2,26 @@ import tensorflow as tf
 import numpy as np
 import argparse
 import time
-import json
-import os
 
 
-DATA_DIR = '/data/data/vc_data/zhiling'
-FID = '00000001'
-SAVE_NAME = os.path.join('./test_results', FID + '.wav')
-CKPT = './saved_models/wavenet.ckpt-73500'
-PRIMER = False
+from models import DNNClassifier
 
 
-def read_inputs(wav_path, receptive_fields):
-    wav, _ = load_wav(wav_path, sr=None)
+MFCC_PATH = '/data/data/vc_data/zhiling'
+SAVE_NAME = ''
+CKPT = './saved_models/vqvae.ckpt-99000'
+MFCC_DIM = 39
+PPG_DIM = 131
 
-    return
+
+def read_inputs(mfcc_path):
+    mfcc = np.load(mfcc_path)
+    return mfcc
 
 
 def get_arguments():
-    def _str_to_bool(s):
-        """Convert string to bool (in argparse context)."""
-        if s.lower() not in ['true', 'false']:
-            raise ValueError('Argument needs to be a '
-                             'boolean, got {}'.format(s))
-        return {'true': True, 'false': False}[s.lower()]
-
-    parser = argparse.ArgumentParser(description="WaveNet training script")
-    parser.add_argument('--fid', type=str, default=FID)
+    parser = argparse.ArgumentParser(description="PPGs extractor inference script")
+    parser.add_argument('--mfcc_path', type=str, default=MFCC_PATH)
     parser.add_argument('--save_name', type=str, default=SAVE_NAME)
     parser.add_argument('--ckpt', type=str, default=CKPT)
     return parser.parse_args()
@@ -36,11 +29,17 @@ def get_arguments():
 
 def main():
     args = get_arguments()
-    with open(args.wavenet_params, 'r') as f:
-        wavenet_params = json.load(f)
+
+    # load data
+    mfcc = np.load(args.mfcc_path)
 
     # Set up network
-
+    mfcc_pl = tf.placeholder(dtype=tf.float32,
+                             shape=[None, MFCC_DIM],
+                             name='mfcc_pl')
+    classifier = DNNClassifier(out_dims=PPG_DIM, hiddens=[256, 256, 256],
+                               drop_rate=0.2, name='dnn_classifier')
+    predicted_ppgs = classifier(mfcc_pl, use_dropout=False)['logits']
 
     # set up a session
     config = tf.ConfigProto()
@@ -54,8 +53,10 @@ def main():
     print('Restoring model from {}'.format(args.ckpt))
     saver.restore(sess, args.ckpt)
 
+    ppgs = sess.run(predicted_ppgs, feed_dict={mfcc_pl: mfcc})
+    np.save(args.save_name, ppgs)
     duration = time.time() - start_time
-    print("Wav file generated in {:.3f} seconds".format(duration))
+    print("PPGs file generated in {:.3f} seconds".format(duration))
     sess.close()
 
 
