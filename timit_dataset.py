@@ -22,6 +22,7 @@ def get_single_data_pair(fname, mfcc_dir, ppg_dir):
     mfcc_f = os.path.join(mfcc_dir, fname)
     ppg_f = os.path.join(ppg_dir, fname)
     mfcc = np.load(mfcc_f)
+    # cut the MFCC into the same time length as PPGs
     mfcc = mfcc[2:mfcc.shape[0]-3, :]
     ppg = np.load(ppg_f)
     assert mfcc.shape[0] == ppg.shape[0]
@@ -44,7 +45,7 @@ def test_generator():
 
 def tf_dataset():
     import tensorflow as tf
-    batch_size = 4
+    batch_size = 128
     train_set = tf.data.Dataset.from_generator(train_generator,
                                                output_types=(
                                                    tf.float32, tf.float32, tf.int32),
