@@ -28,8 +28,8 @@ class DNNClassifier(object):
                                 lambda: self.dropout_layer(cur_layer),
                                 lambda: cur_layer)
         logits = self.output_dense(cur_layer)  # [batch, time, out_dims]
-        cross_entropy = tf.nn.softmax_cross_entropy_with_logits_v2(
-            labels=tf.stop_gradient(labels),
+        cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+            labels=tf.argmax(labels, axis=-1),
             logits=logits) if labels is not None else None
         mask = tf.sequence_mask(lengths, dtype=tf.float32) if lengths is not None else 1.0
         cross_entropy *= mask
@@ -57,7 +57,7 @@ class CnnDnnClassifier(object):
                 self.dense_layers = []
                 for i, hidden in enumerate(dense_hiddens):
                     dense_layer = keras.layers.Dense(units=hidden,
-                                                     activation=tf.nn.tanh,
+                                                     activation=tf.nn.sigmoid,
                                                      name='dense{}'.format(i))
                     self.dense_layers.append(dense_layer)
             self.output_layer = keras.layers.Dense(units=out_dims, activation=None,
@@ -79,8 +79,8 @@ class CnnDnnClassifier(object):
         logits = self.output_layer(dnn_outs)
 
         # compute loss
-        cross_entropy = tf.nn.softmax_cross_entropy_with_logits_v2(
-            labels=tf.stop_gradient(labels),
+        cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+            labels=tf.argmax(labels, axis=-1),
             logits=logits) if labels is not None else None
         mask = tf.sequence_mask(lengths, dtype=tf.float32) if lengths is not None else 1.0
         cross_entropy *= mask
