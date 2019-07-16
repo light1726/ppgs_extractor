@@ -7,7 +7,7 @@ from scipy import signal
 hparams = {
     'sample_rate': 16000,
     'preemphasis': 0.97,
-    'n_fft': 1024,
+    'n_fft': 512,
     'hop_length': 80,
     'win_length': 400,
     'num_mels': 80,
@@ -160,11 +160,12 @@ def spectrogram(wav_arr, n_fft=hparams['n_fft'],
 
 def power_spec2mel(power_spec, sr=hparams['sample_rate'], n_fft=hparams['n_fft'],
                    num_mels=hparams['num_mels'], fmin=hparams['fmin'], fmax=hparams['fmax']):
-    # power_spec should be of shape [1+n_fft/2, time]
+    # power_spec should be of shape [time, 1+n_fft/2]
+    power_spec_t = power_spec.T
     global _mel_basis
     _mel_basis = (librosa.filters.mel(sr, n_fft, n_mels=num_mels, fmin=fmin, fmax=fmax)
                   if _mel_basis is None else _mel_basis)  # [n_mels, 1+n_fft/2]
-    mel_spec = np.dot(_mel_basis, power_spec)  # [n_mels, time]
+    mel_spec = np.dot(_mel_basis, power_spec_t)  # [n_mels, time]
     return mel_spec.T
 
 
@@ -177,10 +178,25 @@ def wav2melspec(wav_arr, sr=hparams['sample_rate'], n_fft=hparams['n_fft'],
     return melspec  # [time, num_mels]
 
 
-def wav2mfcc(wav_arr, sr=hparams['sample_rate'], n_fft=hparams['n_fft'],
-             hop_len=hparams['hop_length'], win_len=hparams['win_length'],
-             window=hparams['window'], num_mels=hparams['num_mels'],
-             fmin=hparams['fmin'], fmax=hparams['fmax']):
+def wav2mfcc(wav_arr, sr=hparams['sample_rate'], n_mfcc=hparams['n_mfcc'],
+             n_fft=hparams['n_fft'], hop_len=hparams['hop_length'],
+             win_len=hparams['win_length'], window=hparams['window'],
+             num_mels=hparams['num_mels'], fmin=hparams['fmin'],
+             fmax=hparams['fmax'], ref_db=hparams['ref_db']):
+    from scipy.fftpack import dct
+    wav_arr = preempahsis(wav_arr)
+    power_spec = spectrogram(wav_arr, n_fft=n_fft, hop_len=hop_len,
+                             win_len=win_len, window=window)['magnitude']
+    mel_spec = power_spec2mel(power_spec, sr=sr, n_fft=n_fft, num_mels=num_mels,
+                              fmin=fmin, fmax=fmax)
+    # log_melspec = power2db(mel_spec, ref_db=ref_db)
+    log_melspec = librosa.amplitude_to_db(mel_spec)
+    # mfcc = dct(x=log_melspec.T, axis=0, type=2, norm='ortho')[:n_mfcc]
+    mfcc = np.dot(librosa.filters.dct(n_mfcc, log_melspec.shape[1]), log_melspec.T)
+    deltas = librosa.feature.delta(mfcc)
+    delta_deltas = librosa.feature.delta(mfcc, order=2)
+    mfcc_feature = np.concatenate((mfcc, deltas, delta_deltas), axis=0)
+    return mfcc_feature.T
 
 
 def mel2log_mel(mel_spec, ref_db=hparams['ref_db'], min_db=hparams['min_db']):
@@ -302,3 +318,22 @@ def stft2wav_tf_test(stft_f, mean_f, std_f):
     y = deemphasis(np.squeeze(wav_arr))
     write_wav('reconstructed_tf.wav', y, sr=16000)
     return y
+
+
+def mfcc_test(wav_f):
+    wav_arr = load_wav(wav_f)
+    mfcc = wav2mfcc(wav_arr)
+    np.save('mfcc.npy', mfcc)
+    return
+
+
+if __name__ == '__main__':
+    wav_f = 'SI1238.WAV'
+    wav_arr = load_wav(wav_f)
+    mfcc = wav2mfcc(wav_arr)
+    mfcc1 = np.load('MDMA0_SI1238.npy')
+    print(mfcc.min(), mfcc1.min())
+    print(mfcc.max(), mfcc1.max())
+    print(mfcc.mean(), mfcc1.mean())
+    print(np.abs(mfcc-mfcc1))
+    print(np.mean(np.abs(mfcc-mfcc1)))
