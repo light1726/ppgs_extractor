@@ -32,8 +32,7 @@ class DNNClassifier(object):
             labels=tf.argmax(labels, axis=-1),
             logits=logits) if labels is not None else None
         mask = tf.sequence_mask(lengths, dtype=tf.float32) if lengths is not None else 1.0
-        cross_entropy *= mask
-        cross_entropy = tf.reduce_mean(cross_entropy) if cross_entropy is not None else None
+        cross_entropy = tf.reduce_mean(cross_entropy*mask) if cross_entropy is not None else None
         return {'logits': logits,  # [time, dims]
                 'cross_entropy': cross_entropy}
 
@@ -83,7 +82,6 @@ class CnnDnnClassifier(object):
             labels=tf.argmax(labels, axis=-1),
             logits=logits) if labels is not None else None
         mask = tf.sequence_mask(lengths, dtype=tf.float32) if lengths is not None else 1.0
-        cross_entropy *= mask
-        cross_entropy = tf.reduce_mean(cross_entropy) if cross_entropy is not None else None
+        cross_entropy = tf.reduce_mean(cross_entropy*mask) if cross_entropy is not None else None
         return {'logits': logits,  # [time, dims]
                 'cross_entropy': cross_entropy}
