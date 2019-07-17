@@ -181,18 +181,18 @@ def wav2melspec(wav_arr, sr=hparams['sample_rate'], n_fft=hparams['n_fft'],
 def wav2mfcc(wav_arr, sr=hparams['sample_rate'], n_mfcc=hparams['n_mfcc'],
              n_fft=hparams['n_fft'], hop_len=hparams['hop_length'],
              win_len=hparams['win_length'], window=hparams['window'],
-             num_mels=hparams['num_mels'], fmin=hparams['fmin'],
-             fmax=hparams['fmax'], ref_db=hparams['ref_db']):
+             num_mels=hparams['num_mels'], fmin=0.0,
+             fmax=None, ref_db=hparams['ref_db']):
     from scipy.fftpack import dct
     wav_arr = preempahsis(wav_arr)
-    power_spec = spectrogram(wav_arr, n_fft=n_fft, hop_len=hop_len,
-                             win_len=win_len, window=window)['magnitude']
-    mel_spec = power_spec2mel(power_spec, sr=sr, n_fft=n_fft, num_mels=num_mels,
+    mag_spec = spectrogram(wav_arr, n_fft=n_fft, hop_len=hop_len,
+                           win_len=win_len, window=window)['magnitude']
+    mel_spec = power_spec2mel(mag_spec, sr=sr, n_fft=n_fft, num_mels=num_mels,
                               fmin=fmin, fmax=fmax)
     # log_melspec = power2db(mel_spec, ref_db=ref_db)
     log_melspec = librosa.amplitude_to_db(mel_spec)
-    # mfcc = dct(x=log_melspec.T, axis=0, type=2, norm='ortho')[:n_mfcc]
-    mfcc = np.dot(librosa.filters.dct(n_mfcc, log_melspec.shape[1]), log_melspec.T)
+    mfcc = dct(x=log_melspec.T, axis=0, type=2, norm='ortho')[:n_mfcc]
+    # mfcc = np.dot(librosa.filters.dct(n_mfcc, log_melspec.shape[1]), log_melspec.T)
     deltas = librosa.feature.delta(mfcc)
     delta_deltas = librosa.feature.delta(mfcc, order=2)
     mfcc_feature = np.concatenate((mfcc, deltas, delta_deltas), axis=0)
@@ -320,14 +320,7 @@ def stft2wav_tf_test(stft_f, mean_f, std_f):
     return y
 
 
-def mfcc_test(wav_f):
-    wav_arr = load_wav(wav_f)
-    mfcc = wav2mfcc(wav_arr)
-    np.save('mfcc.npy', mfcc)
-    return
-
-
-if __name__ == '__main__':
+def mfcc_test():
     wav_f = 'SI1238.WAV'
     wav_arr = load_wav(wav_f)
     mfcc = wav2mfcc(wav_arr)
@@ -335,5 +328,20 @@ if __name__ == '__main__':
     print(mfcc.min(), mfcc1.min())
     print(mfcc.max(), mfcc1.max())
     print(mfcc.mean(), mfcc1.mean())
-    print(np.abs(mfcc-mfcc1))
-    print(np.mean(np.abs(mfcc-mfcc1)))
+    print(np.abs(mfcc - mfcc1))
+    print(np.mean(np.abs(mfcc - mfcc1)))
+    import matplotlib.pyplot as plt
+    plt.subplot(211)
+    plt.imshow(mfcc.T, origin='lower')
+    # plt.colorbar()
+    plt.subplot(212)
+    plt.imshow(mfcc1.T, origin='lower')
+    # plt.colorbar()
+    plt.tight_layout()
+    plt.show()
+    return
+
+
+# if __name__ == '__main__':
+#     mfcc_test()
+
