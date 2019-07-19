@@ -13,7 +13,7 @@ from audio import load_wav, wav2mfcc
 
 WAV_PATH = '/notebooks/projects/share/zhiling/wavs'
 PPG_PATH = '/notebooks/projects/share/zhiling/ppgs_luhui'
-CKPT = './saved_models/vqvae.ckpt-99000'
+CKPT = './saved_models/vqvae.ckpt-343000'
 MFCC_DIM = 39
 PPG_DIM = 131
 
@@ -53,9 +53,11 @@ def main():
     mfcc_pl = tf.placeholder(dtype=tf.float32,
                              shape=[None, None, MFCC_DIM],
                              name='mfcc_pl')
-    classifier = DNNClassifier(out_dims=PPG_DIM, hiddens=[256, 256, 256],
-                               drop_rate=0.2, name='dnn_classifier')
-    predicted_ppgs = classifier(mfcc_pl, use_dropout=False)['logits']
+    # classifier = DNNClassifier(out_dims=PPG_DIM, hiddens=[256, 256, 256],
+    #                            drop_rate=0.2, name='dnn_classifier')
+    classifier = CnnDnnClassifier(out_dims=PPG_DIM, n_cnn=5,
+                                  cnn_hidden=64, dense_hiddens=[256, 256, 256])
+    predicted_ppgs = classifier(inputs=mfcc_pl)['logits']
 
     # set up a session
     config = tf.ConfigProto()
