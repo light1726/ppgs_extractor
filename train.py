@@ -5,11 +5,11 @@ import time
 import os
 import sys
 
-from models import CnnDnnClassifier, DNNClassifier
+from models import CnnDnnClassifier, DNNClassifier, CNNBLSTMCalssifier
 from timit_dataset import train_generator, test_generator
 
 # some super parameters
-BATCH_SIZE = 256
+BATCH_SIZE = 64
 STEPS = int(5e5)
 LEARNING_RATE = 0.3
 STARTED_DATESTRING = "{0:%Y-%m-%dT%H-%M-%S}".format(datetime.now())
@@ -135,10 +135,20 @@ def main():
 
     # classifier = DNNClassifier(out_dims=PPG_DIM, hiddens=[256, 256, 256],
     #                            drop_rate=0.2, name='dnn_classifier')
-    classifier = CnnDnnClassifier(out_dims=PPG_DIM, n_cnn=5,
-                                  cnn_hidden=64, dense_hiddens=[256, 256, 256])
+    # classifier = CnnDnnClassifier(out_dims=PPG_DIM, n_cnn=5,
+    #                               cnn_hidden=64, dense_hiddens=[256, 256, 256])
+    classifier = CNNBLSTMCalssifier(out_dims=PPG_DIM, n_cnn=3, cnn_hidden=256,
+                                    cnn_kernel=3, n_blstm=2, lstm_hidden=128)
     results_dict = classifier(batch_data[0], batch_data[1], batch_data[2])
     predicted = tf.nn.softmax(results_dict['logits'])
+    mask = tf.sequence_mask(batch_data[2], dtype=tf.float32)
+    accuracy = tf.reduce_sum(
+        tf.cast(
+            tf.equal(tf.argmax(predicted, axis=-1),
+                     tf.argmax(batch_data[1], axis=-1)),
+            tf.float32) * mask
+    ) / tf.reduce_sum(tf.cast(batch_data[2], dtype=tf.float32))
+    tf.summary.scalar('accuracy', accuracy)
     tf.summary.image('predicted',
                      tf.expand_dims(
                          tf.transpose(predicted, [0, 2, 1]),
@@ -153,7 +163,7 @@ def main():
     learning_rate_pl = tf.placeholder(tf.float32, None, 'learning_rate')
     tf.summary.scalar('cross_entropy', loss)
     tf.summary.scalar('learning_rate', learning_rate_pl)
-    optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate_pl)
+    optimizer = tf.train.AdadeltaOptimizer(learning_rate=learning_rate_pl)
     optim = optimizer.minimize(loss)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     optim = tf.group([optim, update_ops])
