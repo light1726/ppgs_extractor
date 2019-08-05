@@ -8,8 +8,8 @@ class BiGRUlayer(object):
         self.name = name
         with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
             self.bigru_layer = keras.layers.Bidirectional(
-                keras.layers.GRU(units=self.hidden,
-                                 return_sequences=True),
+                keras.layers.CuDNNGRU(units=self.hidden,
+                                      return_sequences=True),
                 merge_mode='concat'
             )
 
@@ -26,8 +26,8 @@ class BLSTMlayer(object):
         self.name = name
         with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
             self.blstm_layer = keras.layers.Bidirectional(
-                keras.layers.LSTM(units=self.hidden,
-                                  return_sequences=True),
+                keras.layers.CuDNNLSTM(units=self.hidden,
+                                       return_sequences=True),
                 merge_mode='concat'
             )
 
