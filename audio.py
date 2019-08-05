@@ -19,6 +19,7 @@ hparams = {
     'min_db': -80.0,  # restrict the dynamic range of log power
     'iterations': 100,  # griffin_lim #iterations
     'silence_db': -28.0,
+    'center': True,
 }
 
 _mel_basis = None
@@ -109,10 +110,11 @@ def mulaw_decode_tf(encoded, quantization_channels):
 def stft(wav_arr, n_fft=hparams['n_fft'],
          hop_len=hparams['hop_length'],
          win_len=hparams['win_length'],
-         window=hparams['window']):
+         window=hparams['window'],
+         center=hparams['center']):
     # return shape: [n_freqs, time]
     return librosa.core.stft(wav_arr, n_fft=n_fft, hop_length=hop_len,
-                             win_length=win_len, window=window)
+                             win_length=win_len, window=window, center=center)
 
 
 def stft_tf(wav_arr, n_fft=hparams['n_fft'],
@@ -148,10 +150,11 @@ def istft_tf(stft_matrix, hop_len=hparams['hop_length'], n_fft=hparams['n_fft'],
 def spectrogram(wav_arr, n_fft=hparams['n_fft'],
                 hop_len=hparams['hop_length'],
                 win_len=hparams['win_length'],
-                window=hparams['window']):
+                window=hparams['window'],
+                center=hparams['center']):
     # return shape: [time, n_freqs]
     s = stft(wav_arr, n_fft=n_fft, hop_len=hop_len,
-             win_len=win_len, window=window).T
+             win_len=win_len, window=window, center=center).T
     magnitude = np.abs(s)
     power = magnitude ** 2
     return {'magnitude': magnitude,
@@ -193,6 +196,25 @@ def wav2mfcc(wav_arr, sr=hparams['sample_rate'], n_mfcc=hparams['n_mfcc'],
     log_melspec = librosa.amplitude_to_db(mel_spec)
     mfcc = dct(x=log_melspec.T, axis=0, type=2, norm='ortho')[:n_mfcc]
     # mfcc = np.dot(librosa.filters.dct(n_mfcc, log_melspec.shape[1]), log_melspec.T)
+    deltas = librosa.feature.delta(mfcc)
+    delta_deltas = librosa.feature.delta(mfcc, order=2)
+    mfcc_feature = np.concatenate((mfcc, deltas, delta_deltas), axis=0)
+    return mfcc_feature.T
+
+
+def wav2mfcc_v2(wav_arr, sr=hparams['sample_rate'], n_mfcc=hparams['n_mfcc'],
+                n_fft=hparams['n_fft'], hop_len=hparams['hop_length'],
+                win_len=hparams['win_length'], window=hparams['window'],
+                num_mels=hparams['num_mels'], fmin=0.0,
+                fmax=None, ref_db=hparams['ref_db']):
+    from scipy.fftpack import dct
+    wav_arr = preempahsis(wav_arr)
+    power_spec = spectrogram(wav_arr, n_fft=n_fft, hop_len=hop_len,
+                             win_len=win_len, window=window)['power']
+    mel_spec = power_spec2mel(power_spec, sr=sr, n_fft=n_fft, num_mels=num_mels,
+                              fmin=fmin, fmax=fmax)
+    log_melspec = power2db(mel_spec, ref_db=ref_db)
+    mfcc = dct(x=log_melspec.T, axis=0, type=2, norm='ortho')[:n_mfcc]
     deltas = librosa.feature.delta(mfcc)
     delta_deltas = librosa.feature.delta(mfcc, order=2)
     mfcc_feature = np.concatenate((mfcc, deltas, delta_deltas), axis=0)
@@ -341,7 +363,5 @@ def mfcc_test():
     plt.show()
     return
 
-
 # if __name__ == '__main__':
 #     mfcc_test()
-
