@@ -206,11 +206,12 @@ def wav2mfcc_v2(wav_arr, sr=hparams['sample_rate'], n_mfcc=hparams['n_mfcc'],
                 n_fft=hparams['n_fft'], hop_len=hparams['hop_length'],
                 win_len=hparams['win_length'], window=hparams['window'],
                 num_mels=hparams['num_mels'], fmin=0.0,
-                fmax=None, ref_db=hparams['ref_db']):
+                fmax=None, ref_db=hparams['ref_db'],
+                center=hparams['center']):
     from scipy.fftpack import dct
     wav_arr = preempahsis(wav_arr)
     power_spec = spectrogram(wav_arr, n_fft=n_fft, hop_len=hop_len,
-                             win_len=win_len, window=window)['power']
+                             win_len=win_len, window=window, center=center)['power']
     mel_spec = power_spec2mel(power_spec, sr=sr, n_fft=n_fft, num_mels=num_mels,
                               fmin=fmin, fmax=fmax)
     log_melspec = power2db(mel_spec, ref_db=ref_db)
