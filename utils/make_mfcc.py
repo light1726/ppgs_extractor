@@ -1,8 +1,7 @@
 import argparse
 import os
 import numpy as np
-from audio import wav2mfcc, load_wav
-
+from audio import wav2mfcc_v2, load_wav
 
 hparams = {
     'sample_rate': 16000,
@@ -19,7 +18,7 @@ hparams = {
     'min_db': -80.0,  # restrict the dynamic range of log power
     'iterations': 100,  # griffin_lim #iterations
     'silence_db': -28.0,
-    'center': True,
+    'center': False,
 }
 
 
@@ -35,10 +34,11 @@ def main():
     cnt = 0
     for wav_f in wav_files:
         wav_arr = load_wav(wav_f, sr=hparams['sample_rate'])
-        mfcc_feats = wav2mfcc(wav_arr, sr=hparams['sample_rate'],
-                              n_mfcc=hparams['n_mfcc'], n_fft=hparams['n_fft'],
-                              hop_len=hparams['hop_length'], win_len=hparams['win_length'],
-                              window=hparams['window'], num_mels=hparams['num_mels'])
+        mfcc_feats = wav2mfcc_v2(wav_arr, sr=hparams['sample_rate'],
+                                 n_mfcc=hparams['n_mfcc'], n_fft=hparams['n_fft'],
+                                 hop_len=hparams['hop_length'], win_len=hparams['win_length'],
+                                 window=hparams['window'], num_mels=hparams['num_mels'],
+                                 center=hparams['center'])
         save_name = wav_f.split('/')[-1].split('.')[0] + '.npy'
         save_name = os.path.join(mfcc_dir, save_name)
         np.save(save_name, mfcc_feats)
