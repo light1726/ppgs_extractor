@@ -17,7 +17,6 @@ MAX_TO_SAVE = 20
 CKPT_EVERY = 1000
 MFCC_DIM = 39
 PPG_DIM = 131
-DATA_DIR = '/data/share/whole_data_39'
 
 
 def get_arguments():
@@ -32,6 +31,10 @@ def get_arguments():
     parser.add_argument('--batch_size', type=int, default=BATCH_SIZE)
     parser.add_argument('--steps', type=int, default=STEPS)
     parser.add_argument('--lr', type=float, default=LEARNING_RATE)
+    parser.add_argument('--output-model-path', dest='output_model_path', required=True, type=str,
+                        default=os.path.dirname(os.path.realpath(__file__)), help='Philly model output path.')
+    parser.add_argument('--log-dir', dest='log_dir', required=True, type=str,
+                        default=os.path.dirname(os.path.realpath(__file__)), help='Philly log dir.')
     parser.add_argument('--restore_from', type=str, default=None)
     parser.add_argument('--overwrite', type=_str_to_bool, default=True,
                         help='Whether to overwrite the old model ckpt,'
@@ -99,10 +102,17 @@ def validate_directories(restore_dir, overwrite):
 def main():
     args = get_arguments()
 
-    directories = validate_directories(args.restore_from, args.overwrite)
-    restore_dir = directories['restore_from']
-    logdir = directories['logdir']
-    dev_dir = directories['dev_dir']
+    logdir = args.log_dir
+    model_dir = args.output_model_path
+    restore_dir = args.output_model_path
+
+    train_dir = os.path.join(logdir, STARTED_DATESTRING, 'train')
+    dev_dir = os.path.join(logdir, STARTED_DATESTRING, 'dev')
+    # directories = validate_directories(args.restore_from, args.overwrite)
+    # restore_dir = directories['restore_from']
+    # logdir = directories['logdir']
+    # dev_dir = directories['dev_dir']
+
 
     # dataset
     train_set = tf.data.Dataset.from_generator(train_generator,
@@ -169,7 +179,7 @@ def main():
     optim = tf.group([optim, update_ops])
 
     # Set up logging for TensorBoard.
-    train_writer = tf.summary.FileWriter(logdir)
+    train_writer = tf.summary.FileWriter(train_dir)
     train_writer.add_graph(tf.get_default_graph())
     dev_writer = tf.summary.FileWriter(dev_dir)
     summaries = tf.summary.merge_all()
@@ -216,7 +226,7 @@ def main():
                 duration = time.time() - start_time
                 print('step {:d} - eval loss = {:.3f}, ({:.3f} sec/step)'
                       .format(step, loss_value, duration))
-                save_model(saver, sess, logdir, step)
+                save_model(saver, sess, model_dir, step)
                 last_saved_step = step
             else:
                 summary, loss_value, _ = sess.run([summaries, loss, optim],
@@ -233,7 +243,7 @@ def main():
         print()
     finally:
         if step > last_saved_step:
-            save_model(saver, sess, logdir, step)
+            save_model(saver, sess, model_dir, step)
     sess.close()
 
 
