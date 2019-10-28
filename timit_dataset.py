@@ -1,12 +1,12 @@
 import os
 import numpy as np
 
-TRAIN_FILE = '/data/share/train.txt'
-TEST_FILE = '/data/share/test.txt'
-MFCC_DIR = '/data/share/raw_mfcc_39'
-PPG_DIR = '/data/share/classified_ali/pdf_id_onehot'
+TRAIN_FILE = '/media/luhui/experiments_data/librispeech/train.txt'
+TEST_FILE = '/media/luhui/experiments_data/librispeech/dev.txt'
+MFCC_DIR = '/media/luhui/experiments_data/librispeech/mfcc_hop12.5'
+PPG_DIR = '/media/luhui/experiments_data/librispeech/phone_labels_hop12.5'
 MFCC_DIM = 39
-PPG_DIM = 131
+PPG_DIM = 345
 
 
 def text2list(file):
@@ -17,14 +17,22 @@ def text2list(file):
     return file_list
 
 
+def onehot(arr, depth, dtype=np.float32):
+    assert len(arr.shape) == 1
+    onehots = np.zeros(shape=[len(arr), depth], dtype=dtype)
+    onehots[np.arange(len(arr)), arr] = 1
+    return onehots
+
+
 def get_single_data_pair(fname, mfcc_dir, ppg_dir):
     assert os.path.isdir(mfcc_dir) and os.path.isdir(ppg_dir)
-    mfcc_f = os.path.join(mfcc_dir, fname)
-    ppg_f = os.path.join(ppg_dir, fname)
+    mfcc_f = os.path.join(mfcc_dir, fname+'.npy')
+    ppg_f = os.path.join(ppg_dir, fname+'.npy')
     mfcc = np.load(mfcc_f)
     # cut the MFCC into the same time length as PPGs
-    mfcc = mfcc[2:mfcc.shape[0]-3, :]
+    # mfcc = mfcc[2:mfcc.shape[0]-3, :]
     ppg = np.load(ppg_f)
+    ppg = onehot(ppg, depth=PPG_DIM)
     assert mfcc.shape[0] == ppg.shape[0]
     return mfcc, ppg
 
